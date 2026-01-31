@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Persona from '../components/Persona';
 import ChatDrawer from '../components/ChatDrawer';
+import SessionDrawer from '../components/SessionDrawer';
 import JudgeFeedback from '../components/JudgeFeedback';
 import { useFeynmanStore } from '../stores/feynman';
 import { useRealtimeSession } from '../hooks/use-realtime';
@@ -91,6 +92,7 @@ export default function Home() {
 
       {/* 4. The Drawer Layer */}
       {isConnected && <ChatDrawer />}
+      <SessionDrawer />
       
       {/* 5. Mock Mode Controls */}
       {isConnected && isMockMode && (
