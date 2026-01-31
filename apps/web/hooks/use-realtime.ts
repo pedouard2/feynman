@@ -4,38 +4,27 @@ import { createAgent, AgentService } from '../lib/services/agent-interface';
 
 export function useRealtimeSession() {
   const [isConnected, setIsConnected] = useState(false);
+  const [isMicOn, setIsMicOn] = useState(false);
   const agentRef = useRef<AgentService | null>(null);
   
-  const { addMessage, setAgentState, setIsConnected: setStoreConnected, setIsMockMode, assessGap } = useFeynmanStore();
+  const { addMessage, setAgentState, setIsConnected: setStoreConnected, setIsMockMode, assessGap, provider, setProvider } = useFeynmanStore();
 
   const startSession = async () => {
     try {
-      // 1. Determine Mode (Mock vs Real)
-      // Check env var first, then API
+      // 1. Determine Mode (Mock vs Real vs OpenAI TTS)
+      let currentProvider = provider;
       let isMock = process.env.NEXT_PUBLIC_MOCK_MODE === 'true';
-      let ephemeralKey: string | undefined;
 
-      if (!isMock) {
-        const tokenRes = await fetch('/api/session', { method: 'POST' });
-        const data = await tokenRes.json();
-        
-        if (data.mock) {
-            isMock = true;
-            console.log('API returned mock mode (No API Key)');
-        } else {
-            ephemeralKey = data.client_secret.value;
-        }
-      } else {
-          console.log('Forced Mock Mode via Env Var');
-      }
-
-      setIsMockMode(isMock);
       if (isMock) {
-         addMessage('assistant', 'System: Mock mode enabled (Local WebLLM + STT). Speak to start.');
+          currentProvider = 'mock';
+          setIsMockMode(true);
+      } else if (currentProvider === 'mock') {
+          // If store says mock but env doesn't force it, user selected mock
+          isMock = true;
       }
 
       // 2. Initialize Agent via Factory
-      const agent = createAgent(isMock ? 'mock' : 'real', {
+      const agent = createAgent(currentProvider, {
         onConnect: () => {
             setIsConnected(true);
             setStoreConnected(true);
@@ -55,6 +44,8 @@ export function useRealtimeSession() {
         onStateChange: (state) => setAgentState(state),
         onAudioTrack: (stream) => {
              // Basic audio playback for Realtime API
+             // For OpenAI TTS (Track A), playback is handled inside the agent.
+             // If using Realtime API, this stream is used.
             const audioEl = document.createElement('audio');
             audioEl.srcObject = stream;
             audioEl.autoplay = true;
@@ -78,9 +69,30 @@ export function useRealtimeSession() {
     }
   };
 
+  const sendMessage = (text: string) => {
+    agentRef.current?.send(text);
+  };
+
+  const toggleMic = () => {
+    const newState = !isMicOn;
+    setIsMicOn(newState);
+    agentRef.current?.setMicEnabled?.(newState);
+  };
+
+  const commitTurn = () => {
+    if (isMicOn) {
+      setIsMicOn(false);
+      agentRef.current?.commitAudioTurn?.();
+    }
+  };
+
   return {
     isConnected,
+    isMicOn,
     startSession,
-    stopSession
+    stopSession,
+    sendMessage,
+    toggleMic,
+    commitTurn
   };
 }

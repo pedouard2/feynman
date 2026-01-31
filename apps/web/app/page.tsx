@@ -5,21 +5,22 @@ import Persona from '../components/Persona';
 import ChatDrawer from '../components/ChatDrawer';
 import SessionDrawer from '../components/SessionDrawer';
 import JudgeFeedback from '../components/JudgeFeedback';
+import PersonaSelector from '../components/PersonaSelector';
 import { useFeynmanStore } from '../stores/feynman';
 import { useRealtimeSession } from '../hooks/use-realtime';
-import { Mic, MicOff, Power } from 'lucide-react';
+import { Mic, MicOff, Power, Send } from 'lucide-react';
 import clsx from 'clsx';
 
 export default function Home() {
   const { agentState, isConnected, isMockMode, setAgentState } = useFeynmanStore();
-  const { startSession, stopSession } = useRealtimeSession();
-  
-  // Local mute state (visual only for now as Realtime API handles VAD)
-  const [isMicOn, setIsMicOn] = useState(true);
+  const { startSession, stopSession, sendMessage, toggleMic, commitTurn, isMicOn } = useRealtimeSession();
 
   const handleToggleMic = () => {
-    setIsMicOn(!isMicOn);
-    // TODO: Implement track disabling in use-realtime if needed
+    toggleMic();
+  };
+
+  const handleCommitTurn = () => {
+    commitTurn();
   };
 
   const handlePower = () => {
@@ -29,6 +30,17 @@ export default function Home() {
       startSession();
     }
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey && isMicOn && isConnected) {
+        e.preventDefault();
+        handleCommitTurn();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMicOn, isConnected]);
 
   return (
     <main className="relative w-full h-screen overflow-hidden bg-black font-sans select-none">
@@ -65,33 +77,48 @@ export default function Home() {
         
         {/* Only show controls if connected */}
         {isConnected && (
-          <button
-            onClick={handleToggleMic}
-            className={clsx(
-              "pointer-events-auto w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 backdrop-blur-sm",
-              isMicOn 
-                ? "bg-red-500/80 text-white shadow-[0_0_40px_rgba(239,68,68,0.5)] scale-110" 
-                : "bg-white/10 hover:bg-white/20 text-white border border-white/20"
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleToggleMic}
+              className={clsx(
+                "pointer-events-auto w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 backdrop-blur-sm",
+                isMicOn 
+                  ? "bg-red-500/80 text-white shadow-[0_0_40px_rgba(239,68,68,0.5)] scale-110" 
+                  : "bg-white/10 hover:bg-white/20 text-white border border-white/20"
+              )}
+            >
+              {isMicOn ? <Mic size={40} /> : <MicOff size={32} />}
+            </button>
+            
+            {isMicOn && (
+              <button
+                onClick={handleCommitTurn}
+                className="pointer-events-auto w-16 h-16 rounded-full flex items-center justify-center bg-green-500/80 text-white shadow-[0_0_30px_rgba(34,197,94,0.5)] hover:scale-110 transition-all duration-300 backdrop-blur-sm"
+                title="Send (Enter)"
+              >
+                <Send size={28} />
+              </button>
             )}
-          >
-            {isMicOn ? <Mic size={40} /> : <MicOff size={32} />}
-          </button>
+          </div>
         )}
 
         {/* Start Button if disconnected */}
         {!isConnected && (
-          <button
-            onClick={handlePower}
-            className="pointer-events-auto px-8 py-4 bg-white text-black font-bold rounded-full hover:scale-105 transition-transform flex items-center gap-3 shadow-xl shadow-white/10"
-          >
-            <Power size={20} />
-            Initialize Session
-          </button>
+          <div className="pointer-events-auto flex flex-col items-center gap-8 max-h-[80vh] overflow-y-auto p-4">
+            <PersonaSelector />
+            <button
+              onClick={handlePower}
+              className="px-8 py-4 bg-white text-black font-bold rounded-full hover:scale-105 transition-transform flex items-center gap-3 shadow-xl shadow-white/10"
+            >
+              <Power size={20} />
+              Start Session
+            </button>
+          </div>
         )}
       </div>
 
       {/* 4. The Drawer Layer */}
-      {isConnected && <ChatDrawer />}
+      {isConnected && <ChatDrawer onSendMessage={sendMessage} />}
       <SessionDrawer />
       
       {/* 5. Mock Mode Controls */}

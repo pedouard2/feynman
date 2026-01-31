@@ -1,6 +1,5 @@
 import { webLLM } from '../web-llm';
 import { PERSONA_SYSTEM_PROMPT } from '../prompts';
-import { useFeynmanStore } from '../../stores/feynman';
 
 export interface AgentConfig {
   onConnect: () => void;
@@ -14,15 +13,20 @@ export interface AgentService {
   connect(): Promise<void>;
   disconnect(): void;
   send(text: string): void;
+  setMicEnabled?(enabled: boolean): void;
+  commitAudioTurn?(): void;
 }
 
 // ------------------------------------------------------------------
-// MOCK AGENT (WebLLM + SpeechSynthesis + SpeechRecognition)
+// LOCAL AGENT (WebLLM + Browser SpeechSynthesis + SpeechRecognition)
+// Fully offline/local - no API costs
 // ------------------------------------------------------------------
-export class MockAgent implements AgentService {
+export class LocalAgent implements AgentService {
   private config: AgentConfig;
   private recognition: any;
   private isProcessing = false;
+  private isMicEnabled = false;
+  private pendingTranscripts: string[] = [];
 
   constructor(config: AgentConfig) {
     this.config = config;
@@ -31,41 +35,64 @@ export class MockAgent implements AgentService {
   async connect() {
     this.config.onStateChange('idle');
     
-    // Initialize LLM
     webLLM.initialize();
 
-    // Initialize STT
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       this.recognition = new SpeechRecognition();
-      this.recognition.continuous = false;
+      this.recognition.continuous = true;
       this.recognition.interimResults = false;
       this.recognition.lang = 'en-US';
 
       this.recognition.onstart = () => {
-        if (!this.isProcessing) this.config.onStateChange('listening');
-      };
-
-      this.recognition.onend = () => {
-        if (!this.isProcessing) {
-            try { this.recognition.start(); } catch {}
+        if (!this.isProcessing && this.isMicEnabled) {
+          this.config.onStateChange('listening');
         }
       };
 
-      this.recognition.onresult = async (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        this.handleUserMessage(transcript);
+      this.recognition.onend = () => {
+        if (this.isMicEnabled && !this.isProcessing) {
+          try { this.recognition.start(); } catch {}
+        }
       };
 
-      this.recognition.start();
+      this.recognition.onresult = (event: any) => {
+        const transcript = event.results[event.results.length - 1][0].transcript.trim();
+        if (transcript && this.isMicEnabled) {
+          this.pendingTranscripts.push(transcript);
+        }
+      };
     }
     
     this.config.onConnect();
   }
 
-  processText(text: string) {
-      // Manual text input entry point
-      this.handleUserMessage(text);
+  setMicEnabled(enabled: boolean) {
+    this.isMicEnabled = enabled;
+    if (enabled) {
+      this.pendingTranscripts = [];
+      this.config.onStateChange('listening');
+      if (this.recognition) {
+        try { this.recognition.start(); } catch {}
+      }
+    } else {
+      this.config.onStateChange('idle');
+      if (this.recognition) {
+        try { this.recognition.stop(); } catch {}
+      }
+    }
+  }
+
+  commitAudioTurn() {
+    if (this.pendingTranscripts.length > 0) {
+      const fullTranscript = this.pendingTranscripts.join(' ');
+      this.pendingTranscripts = [];
+      this.isMicEnabled = false;
+      if (this.recognition) {
+        try { this.recognition.stop(); } catch {}
+      }
+      this.handleUserMessage(fullTranscript);
+    }
   }
 
   private async handleUserMessage(text: string) {
@@ -78,7 +105,7 @@ export class MockAgent implements AgentService {
         this.config.onMessage('assistant', response);
         this.speak(response);
     } catch (e) {
-        console.error("Mock Agent Error:", e);
+        console.error("LocalAgent Error:", e);
         this.config.onStateChange('idle');
         this.isProcessing = false;
     }
@@ -91,7 +118,6 @@ export class MockAgent implements AgentService {
     utterance.onend = () => {
         this.config.onStateChange('idle');
         this.isProcessing = false;
-        try { this.recognition.start(); } catch {}
     };
     window.speechSynthesis.speak(utterance);
   }
@@ -103,7 +129,7 @@ export class MockAgent implements AgentService {
   }
 
   send(text: string) {
-    this.processText(text);
+    this.handleUserMessage(text);
   }
 }
 
@@ -115,6 +141,7 @@ export class RealtimeAgent implements AgentService {
   private pc: RTCPeerConnection | null = null;
   private dc: RTCDataChannel | null = null;
   private audioEl: HTMLAudioElement;
+  private isMicEnabled = false;
 
   constructor(config: AgentConfig) {
     this.config = config;
@@ -140,13 +167,22 @@ export class RealtimeAgent implements AgentService {
             if (this.config.onAudioTrack) this.config.onAudioTrack(e.streams[0]);
         };
 
-        // Add Local Mic
-        const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Add Local Mic with echo prevention
+        const ms = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }
+        });
         this.pc.addTrack(ms.getTracks()[0]);
 
         // Data Channel
         this.dc = this.pc.createDataChannel("oai-events");
-        this.dc.onopen = () => this.config.onConnect();
+        this.dc.onopen = () => {
+          this.disableServerVAD();
+          this.config.onConnect();
+        };
         this.dc.onmessage = (e) => this.handleEvent(JSON.parse(e.data));
 
         // Offer/Answer
@@ -180,14 +216,70 @@ export class RealtimeAgent implements AgentService {
       if (evt.type === 'response.audio_transcript.done') {
           this.config.onMessage('assistant', evt.transcript);
       }
+      if (evt.type === 'conversation.item.input_audio_transcription.completed') {
+          this.config.onMessage('user', evt.transcript);
+      }
       if (evt.type === 'response.function_call_arguments.done') {
            // Handle tools if needed
       }
-      // Simple state mapping (approximate)
-      if (evt.type === 'input_audio_buffer.speech_started') this.config.onStateChange('listening');
-      if (evt.type === 'input_audio_buffer.speech_stopped') this.config.onStateChange('thinking');
-      if (evt.type === 'response.content_part.added') this.config.onStateChange('talking');
-      if (evt.type === 'response.done') this.config.onStateChange('idle');
+
+      if (evt.type === 'response.content_part.added') {
+          this.config.onStateChange('talking');
+          this.updateMicTrack(false);
+      }
+      if (this.pc && evt.type === 'response.done') {
+           this.config.onStateChange('idle');
+           setTimeout(() => {
+              if (this.isMicEnabled) {
+                this.updateMicTrack(true);
+              }
+           }, 1500);
+       }
+  }
+
+  private disableServerVAD() {
+      if (this.dc && this.dc.readyState === 'open') {
+          this.dc.send(JSON.stringify({
+              type: "session.update",
+              session: {
+                  turn_detection: null,
+                  input_audio_transcription: { model: "whisper-1" }
+              }
+          }));
+      }
+  }
+
+  private updateMicTrack(enabled: boolean) {
+      if (this.pc) {
+          const senders = this.pc.getSenders();
+          const audioSender = senders.find(s => s.track?.kind === 'audio');
+          if (audioSender && audioSender.track) {
+              audioSender.track.enabled = enabled;
+          }
+      }
+  }
+
+  setMicEnabled(enabled: boolean) {
+      this.isMicEnabled = enabled;
+      if (enabled) {
+          if (this.dc && this.dc.readyState === 'open') {
+              this.dc.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
+          }
+          this.config.onStateChange('listening');
+      } else {
+          this.config.onStateChange('idle');
+      }
+      this.updateMicTrack(enabled);
+  }
+
+  commitAudioTurn() {
+      if (this.dc && this.dc.readyState === 'open') {
+          this.config.onStateChange('thinking');
+          this.updateMicTrack(false);
+          this.isMicEnabled = false;
+          this.dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+          this.dc.send(JSON.stringify({ type: "response.create" }));
+      }
   }
 
   disconnect() {
@@ -197,16 +289,33 @@ export class RealtimeAgent implements AgentService {
   }
 
   send(text: string) {
-      // Realtime API text injection (optional)
-      // For now we assume voice only primary
-      console.warn("Text sending not yet implemented for Realtime Agent");
+      if (this.dc && this.dc.readyState === 'open') {
+          // Send user message
+          this.dc.send(JSON.stringify({
+              type: "conversation.item.create",
+              item: {
+                  type: "message",
+                  role: "user",
+                  content: [
+                      { type: "input_text", text: text }
+                  ]
+              }
+          }));
+
+          // Trigger response generation
+          this.dc.send(JSON.stringify({
+              type: "response.create"
+          }));
+      } else {
+          console.error("Data Channel not open. Cannot send text.");
+      }
   }
 }
 
 // ------------------------------------------------------------------
 // FACTORY
 // ------------------------------------------------------------------
-export function createAgent(type: 'mock' | 'real', config: AgentConfig): AgentService {
-    if (type === 'mock') return new MockAgent(config);
+export function createAgent(type: 'mock' | 'local' | 'real' | 'openai', config: AgentConfig): AgentService {
+    if (type === 'mock' || type === 'local') return new LocalAgent(config);
     return new RealtimeAgent(config);
 }
