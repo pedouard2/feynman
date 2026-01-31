@@ -49,15 +49,29 @@ export function useRealtimeSession() {
                 
                 // Simulate Agent Reply after a delay
                 setTimeout(() => {
+                    const mockResponse = "I heard you! That is a fascinating observation. Can you tell me more?";
+                    
+                    // Update UI
+                    useFeynmanStore.getState().addMessage('assistant', `Mock: ${mockResponse}`);
+                    
+                    // Start Talking State
                     useFeynmanStore.getState().setAgentState('talking');
                     
-                    // Respond with dummy text
-                    useFeynmanStore.getState().addMessage('assistant', 'Mock: I heard you! (Simulated Response)');
+                    // Vocalize
+                    const utterance = new SpeechSynthesisUtterance(mockResponse);
+                    utterance.rate = 1.1; // Slightly faster for energy
                     
-                    // Go back to idle after "talking"
-                    setTimeout(() => {
+                    utterance.onend = () => {
+                         console.log('TTS Ended -> Idle');
                          useFeynmanStore.getState().setAgentState('idle');
-                    }, 3000); // Talk for 3s
+                    };
+                    
+                    utterance.onerror = (e) => {
+                        console.error("TTS Error", e);
+                         useFeynmanStore.getState().setAgentState('idle');
+                    };
+
+                    window.speechSynthesis.speak(utterance);
                     
                 }, 1500); // Think for 1.5s
             },
