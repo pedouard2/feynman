@@ -6,17 +6,16 @@ import { useFeynmanStore } from '../stores/feynman';
 import { AlertTriangle, X } from 'lucide-react';
 
 export default function JudgeFeedback() {
-  const { feedback } = useFeynmanStore();
+  const { feedback, clearFeedback } = useFeynmanStore();
 
   useEffect(() => {
     if (feedback) {
       const timer = setTimeout(() => {
-        // We'd need an action to clear feedback in the store if we want auto-dismiss
-        // keeping it simple for now, relying on store updates
+        clearFeedback();
       }, 8000); // 8 seconds to read
       return () => clearTimeout(timer);
     }
-  }, [feedback]);
+  }, [feedback, clearFeedback]);
 
   return (
     <AnimatePresence>
@@ -38,7 +37,7 @@ export default function JudgeFeedback() {
                 </p>
             </div>
             <button 
-                onClick={() => {}} // No-op for now unless we add clearFeedback action
+                onClick={clearFeedback}
                 className="opacity-50 hover:opacity-100 transition-opacity"
             >
                 <X size={18} />

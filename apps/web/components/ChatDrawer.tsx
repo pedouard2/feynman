@@ -6,7 +6,11 @@ import { ChevronUp, ChevronDown, Send } from 'lucide-react';
 import { useFeynmanStore } from '../stores/feynman';
 import clsx from 'clsx';
 
-export default function ChatDrawer() {
+export interface ChatDrawerProps {
+  onSendMessage: (text: string) => void;
+}
+
+export default function ChatDrawer({ onSendMessage }: ChatDrawerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { messages, addMessage, concepts } = useFeynmanStore();
   const [inputText, setInputText] = useState("");
@@ -14,7 +18,7 @@ export default function ChatDrawer() {
   const handleSend = () => {
     if (!inputText.trim()) return;
     addMessage('user', inputText);
-    // TODO: Send to Realtime API data channel if text input is supported
+    onSendMessage(inputText);
     setInputText("");
   };
 
