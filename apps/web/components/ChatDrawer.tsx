@@ -8,7 +8,7 @@ import clsx from 'clsx';
 
 export default function ChatDrawer() {
   const [isOpen, setIsOpen] = useState(false);
-  const { messages, addMessage } = useFeynmanStore();
+  const { messages, addMessage, concepts } = useFeynmanStore();
   const [inputText, setInputText] = useState("");
 
   const handleSend = () => {
@@ -52,6 +52,36 @@ export default function ChatDrawer() {
 
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              
+              {/* Concept Tracker (Persisted) */}
+              {concepts.length > 0 && (
+                <div className="mb-6 p-4 bg-white/5 rounded-xl border border-white/10">
+                   <h3 className="text-sm font-bold text-white mb-3 uppercase tracking-wider opacity-80">
+                     Concept Coverage
+                   </h3>
+                   <div className="space-y-2">
+                     {concepts.map((c, i) => (
+                       <div key={i} className="flex items-center gap-3">
+                         <div className={clsx(
+                           "w-2 h-2 rounded-full shadow-[0_0_10px_currentColor]",
+                           c.status === 'covered' ? "bg-green-400 text-green-400" :
+                           c.status === 'partial' ? "bg-yellow-400 text-yellow-400" :
+                           "bg-red-400 text-red-400"
+                         )} />
+                         <span className={clsx(
+                           "text-sm font-medium",
+                           c.status === 'covered' ? "text-white" : "text-white/50"
+                         )}>
+                           {c.name}
+                         </span>
+                         {c.status === 'covered' && <span className="text-xs text-green-400 ml-auto">✓</span>}
+                       </div>
+                     ))}
+                   </div>
+                </div>
+              )}
+
+              {/* Chat Messages */}
               {messages.map((msg) => (
                 <div 
                   key={msg.id}
