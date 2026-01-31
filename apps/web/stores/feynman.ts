@@ -10,12 +10,18 @@ interface Message {
   timestamp: number;
 }
 
+export interface Concept {
+  name: string;
+  status: 'covered' | 'missing' | 'partial';
+}
+
 interface FeynmanState {
   step: Step;
   topic: string;
   transcript: string; // Keep for full context analysis
   messages: Message[];
   knowledgeDebt: number;
+  concepts: Concept[];
   isRecording: boolean;
   feedback: string | null;
   agentState: 'idle' | 'listening' | 'thinking' | 'talking';
@@ -31,6 +37,7 @@ interface FeynmanState {
   setAgentState: (state: 'idle' | 'listening' | 'thinking' | 'talking') => void;
   setIsConnected: (connected: boolean) => void;
   setIsMockMode: (isMock: boolean) => void;
+  updateConcepts: (concepts: Concept[]) => void;
 }
 
 export const useFeynmanStore = create<FeynmanState>((set, get) => ({
@@ -44,12 +51,14 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
   agentState: 'idle',
   isConnected: false,
   isMockMode: false,
+  concepts: [],
 
   setTopic: (topic) => set({ topic }),
   setStep: (step) => set({ step }),
   setAgentState: (agentState) => set({ agentState }),
   setIsConnected: (isConnected) => set({ isConnected }),
   setIsMockMode: (isMockMode) => set({ isMockMode }),
+  updateConcepts: (concepts) => set({ concepts }),
   
   addMessage: (role, text) => set((state) => ({ 
     transcript: state.transcript + ' ' + text,
@@ -62,8 +71,15 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
   })),
 
   assessGap: async () => {
-    const { transcript } = get();
+    const { transcript, topic } = get();
     const result = await evaluateExplanation(transcript);
+    
+    // Analyze Knowledge Graph (Async)
+    // We do this in parallel or after judge
+    import('../lib/knowledge').then(async (mod) => {
+       const concepts = await mod.analyzeKnowledge(topic, transcript);
+       set({ concepts });
+    });
     
     set({ 
       knowledgeDebt: result.knowledgeDebt,
