@@ -11,6 +11,7 @@
 
 # Dependencies
 node_modules
+bun.lock
 
 # Next.js
 .next
