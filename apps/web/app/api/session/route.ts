@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+import { PERSONA_SYSTEM_PROMPT } from '../../../lib/prompts';
+
 export async function POST() {
   try {
     if (!process.env.OPENAI_API_KEY) {
@@ -19,6 +21,7 @@ export async function POST() {
       body: JSON.stringify({
         model: 'gpt-4o-realtime-preview-2024-12-17',
         voice: 'verse',
+        instructions: PERSONA_SYSTEM_PROMPT
       }),
     });
 
