@@ -1,0 +1,24 @@
+# Agent & Planning
+.sisyphus
+.agent
+.gemini
+
+# System & IDE
+.DS_Store
+.ruff_cache
+.vscode
+.idea
+
+# Dependencies
+node_modules
+
+# Next.js
+.next
+out
+build
+dist
+
+# Environment
+.env
+.env.local
+.env.*.local
