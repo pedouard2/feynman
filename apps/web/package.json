@@ -4,12 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:mock": "NEXT_PUBLIC_MOCK_MODE=true next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest"
   },
   "dependencies": {
+    "@mlc-ai/web-llm": "^0.2.80",
     "@rive-app/react-canvas": "^4.26.2",
     "clsx": "^2.1.1",
     "framer-motion": "^12.29.2",
