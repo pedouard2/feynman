@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { PanelLeft } from 'lucide-react';
 import clsx from 'clsx';
 
 interface SessionContextPanelProps {
@@ -18,37 +18,31 @@ export default function SessionContextPanel({ sessionId, isOpen, onToggle }: Ses
 
   return (
     <>
-      {!isOpen && (
-        <button
-          onClick={onToggle}
-          className="fixed top-1/2 left-0 -translate-y-1/2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 border-l-0 text-white p-3 rounded-r-lg transition-colors z-40"
-          title="Open context panel"
-        >
-          <PanelLeftOpen size={20} />
-        </button>
-      )}
+      <button
+        onClick={onToggle}
+        className={clsx(
+          "fixed top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 text-white transition-all hover:scale-110 z-40",
+          isOpen ? "left-[320px] p-2 rounded-full" : "left-4 p-2 rounded-full"
+        )}
+        title={isOpen ? "Close context panel" : "Open context panel"}
+      >
+        <PanelLeft size={16} className={clsx("transition-transform", isOpen && "rotate-180")} />
+      </button>
 
       <AnimatePresence>
         {isOpen && (
           <motion.div
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 400, opacity: 1 }}
+            animate={{ width: 320, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="h-full bg-neutral-900 border-r border-white/10 flex flex-col overflow-hidden"
+            className="h-full bg-neutral-900/80 backdrop-blur-md border-r border-white/10 flex flex-col overflow-hidden relative"
           >
             <div className="p-4 border-b border-white/10 flex items-center justify-between flex-shrink-0">
               <div>
                 <h3 className="text-sm font-semibold text-white">Session Context</h3>
                 <p className="text-xs text-white/50 mt-1">Add context to guide the conversation</p>
               </div>
-              <button
-                onClick={onToggle}
-                className="text-white/50 hover:text-white transition-colors"
-                title="Close context panel"
-              >
-                <PanelLeftClose size={20} />
-              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -94,6 +88,7 @@ export default function SessionContextPanel({ sessionId, isOpen, onToggle }: Ses
           </motion.div>
         )}
       </AnimatePresence>
+
     </>
   );
 }
