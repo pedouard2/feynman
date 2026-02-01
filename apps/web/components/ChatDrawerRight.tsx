@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Mic, MicOff, Send, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Mic, MicOff, Send, PanelRight } from 'lucide-react';
 import { useFeynmanStore } from '../stores/feynman';
 import clsx from 'clsx';
 
@@ -41,15 +41,16 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
 
   return (
     <>
-      {!isOpen && (
-        <button
-          onClick={onToggle}
-          className="fixed top-1/2 right-0 -translate-y-1/2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 border-r-0 text-white p-3 rounded-l-lg transition-colors z-40"
-          title="Open chat"
-        >
-          <PanelRightOpen size={20} />
-        </button>
-      )}
+      <button
+        onClick={onToggle}
+        className={clsx(
+          "fixed top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 text-white transition-all hover:scale-110 z-40",
+          isOpen ? "right-[400px] p-2 rounded-full" : "right-4 p-2 rounded-full"
+        )}
+        title={isOpen ? "Close chat" : "Open chat"}
+      >
+        <PanelRight size={16} className={clsx("transition-transform", isOpen && "rotate-180")} />
+      </button>
 
       <AnimatePresence>
         {isOpen && (
@@ -62,13 +63,6 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
           >
             <div className="p-4 border-b border-white/10 flex items-center justify-between flex-shrink-0">
               <h3 className="text-lg font-semibold text-white">Chat</h3>
-              <button
-                onClick={onToggle}
-                className="text-white/50 hover:text-white transition-colors"
-                title="Close chat"
-              >
-                <PanelRightClose size={20} />
-              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -111,10 +105,7 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
                 <div
                   key={msg.id}
                   className={clsx(
-                    'max-w-[85%] p-3 rounded-2xl text-sm',
-                    msg.role === 'user'
-                      ? 'ml-auto bg-blue-600 text-white rounded-tr-sm'
-                      : 'mr-auto bg-white/10 text-white rounded-tl-sm'
+                   
                   )}
                 >
                   {msg.text}
