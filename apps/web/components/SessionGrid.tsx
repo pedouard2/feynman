@@ -10,7 +10,7 @@ interface SessionGridProps {
 }
 
 export default function SessionGrid({ onSessionClick, onNewSession }: SessionGridProps) {
-  const { sessions } = useFeynmanStore();
+  const { conversations } = useFeynmanStore();
 
   const getPersonaInfo = (personaId: string) => {
     const persona = DEFAULT_PERSONAS[personaId];
@@ -20,18 +20,18 @@ export default function SessionGrid({ onSessionClick, onNewSession }: SessionGri
     };
   };
 
-  if (sessions.length === 0) {
+  if (conversations.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-black text-white">
+      <div className="flex flex-col items-center justify-center h-screen bg-background text-foreground">
         <div className="text-center max-w-md">
           <div className="text-6xl mb-6">📚</div>
           <h2 className="text-2xl font-bold mb-4">No sessions yet</h2>
-          <p className="text-white/60 mb-8">
+          <p className="text-foreground/60 mb-8">
             Create your first session to start learning with AI personas
           </p>
           <button
             onClick={onNewSession}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl flex items-center gap-2 mx-auto transition-colors"
+            className="px-6 py-3 bg-primary hover:bg-primary/80 text-foreground font-medium rounded-[10px] flex items-center gap-2 mx-auto transition-colors"
           >
             <Plus size={20} />
             Create Your First Session
@@ -42,15 +42,15 @@ export default function SessionGrid({ onSessionClick, onNewSession }: SessionGri
   }
 
   return (
-    <div className="min-h-screen bg-black text-white p-8">
+    <div className="min-h-screen bg-background text-foreground p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-accent-blue bg-clip-text text-transparent">
             Your Sessions
           </h1>
           <button
             onClick={onNewSession}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl flex items-center gap-2 transition-colors"
+            className="px-6 py-3 bg-primary hover:bg-primary/80 text-foreground font-medium rounded-[10px] flex items-center gap-2 transition-colors"
           >
             <Plus size={20} />
             New Session
@@ -58,25 +58,25 @@ export default function SessionGrid({ onSessionClick, onNewSession }: SessionGri
         </div>
 
         <div className="grid grid-cols-3 gap-6">
-          {sessions.map((session) => {
-            const personaInfo = getPersonaInfo(session.personaId);
+          {conversations.map((conversation) => {
+            const personaInfo = getPersonaInfo(conversation.personaId);
             return (
               <button
-                key={session.id}
-                onClick={() => onSessionClick(session.id)}
-                className="bg-white/5 hover:bg-white/10 transition-colors rounded-lg p-6 text-left border border-white/10 group"
+                key={conversation.id}
+                onClick={() => onSessionClick(conversation.id)}
+                className="bg-secondary/30 hover:bg-accent-blue/20 transition-colors rounded-[10px] p-6 text-left border border-primary/20 group"
               >
                 <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-foreground font-bold text-lg flex-shrink-0">
                     {personaInfo.initial}
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-white group-hover:text-blue-300 transition-colors truncate mb-1">
-                      {session.topic}
+                    <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors truncate mb-1">
+                      {conversation.title || conversation.context || 'Untitled Session'}
                     </h3>
-                    <p className="text-xs text-white/40">
-                      {new Date(session.date).toLocaleDateString()} • {personaInfo.name}
+                    <p className="text-xs text-foreground/40">
+                      {new Date(conversation.createdAt).toLocaleDateString()} • {personaInfo.name}
                     </p>
                   </div>
                 </div>
