@@ -1,94 +1,149 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useFeynmanStore } from '../stores/feynman';
 import { createAgent, AgentService } from '../lib/services/agent-interface';
 
 export function useRealtimeSession() {
   const [isConnected, setIsConnected] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
+  const [currentTranscript, setCurrentTranscript] = useState('');
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const agentRef = useRef<AgentService | null>(null);
   
-  const { addMessage, setAgentState, setIsConnected: setStoreConnected, setIsMockMode, assessGap, provider, setProvider } = useFeynmanStore();
+  const { 
+    addMessage, 
+    setAgentState, 
+    setIsConnected: setStoreConnected, 
+    setIsMockMode, 
+    assessGap, 
+    provider 
+  } = useFeynmanStore();
 
-  const startSession = async () => {
-    try {
-      // 1. Determine Mode (Mock vs Real vs OpenAI TTS)
-      let currentProvider = provider;
-      let isMock = process.env.NEXT_PUBLIC_MOCK_MODE === 'true';
+  const startSession = useCallback(async () => {
+    setConnectionError(null);
+    
+    const isMock = process.env.NEXT_PUBLIC_MOCK_MODE === 'true' || provider === 'mock';
+    const agentType = isMock ? 'mock' : 'openai';
+    
+    if (isMock) {
+      setIsMockMode(true);
+    }
 
-      if (isMock) {
-          currentProvider = 'mock';
-          setIsMockMode(true);
-      } else if (currentProvider === 'mock') {
-          // If store says mock but env doesn't force it, user selected mock
-          isMock = true;
+    const createAgentConfig = (onConnectMessage?: string) => ({
+      onConnect: () => {
+        setIsConnected(true);
+        setStoreConnected(true);
+        if (onConnectMessage) {
+          setConnectionError(onConnectMessage);
+        } else {
+          setConnectionError(null);
+        }
+      },
+      onDisconnect: () => {
+        setIsConnected(false);
+        setStoreConnected(false);
+        setAgentState('idle');
+      },
+      onMessage: (role: 'user' | 'assistant', text: string) => {
+        addMessage(role, text);
+        if (role === 'user') {
+          assessGap();
+        }
+      },
+      onStateChange: (state: 'idle' | 'listening' | 'thinking' | 'talking') => setAgentState(state),
+      onAudioTrack: (stream: MediaStream) => {
+        const audioEl = document.createElement('audio');
+        audioEl.srcObject = stream;
+        audioEl.autoplay = true;
+      },
+      onTranscriptUpdate: (text: string) => {
+        setCurrentTranscript(text);
+      },
+      onError: (error: Error) => {
+        setConnectionError(error.message);
+      },
+      onFallback: () => {
+        setIsMockMode(true);
       }
+    });
 
-      // 2. Initialize Agent via Factory
-      const agent = createAgent(currentProvider, {
-        onConnect: () => {
-            setIsConnected(true);
-            setStoreConnected(true);
-        },
-        onDisconnect: () => {
-             setIsConnected(false);
-             setStoreConnected(false);
-             setAgentState('idle');
-        },
-        onMessage: (role, text) => {
-            addMessage(role, text);
-            // Trigger feedback assessment if user finished a thought
-            if (role === 'user') {
-                assessGap();
-            }
-        },
-        onStateChange: (state) => setAgentState(state),
-        onAudioTrack: (stream) => {
-             // Basic audio playback for Realtime API
-             // For OpenAI TTS (Track A), playback is handled inside the agent.
-             // If using Realtime API, this stream is used.
-            const audioEl = document.createElement('audio');
-            audioEl.srcObject = stream;
-            audioEl.autoplay = true;
-        } 
-      });
-
+    try {
+      const agent = createAgent(agentType, createAgentConfig());
       agentRef.current = agent;
-      await agent.connect();
-
+      
+      try {
+        await agent.connect();
+      } catch {
+        if (agentType === 'openai') {
+          setIsMockMode(true);
+          
+          const fallbackAgent = createAgent('local', createAgentConfig('Using offline mode - cloud connection unavailable'));
+          agentRef.current = fallbackAgent;
+          await fallbackAgent.connect();
+        } else {
+          throw new Error('Failed to connect');
+        }
+      }
     } catch (err) {
-      console.error('Failed to start session:', err);
+      setConnectionError(err instanceof Error ? err.message : 'Failed to start session');
       setIsConnected(false);
       setStoreConnected(false);
     }
-  };
+  }, [provider, setIsMockMode, setStoreConnected, setAgentState, addMessage, assessGap]);
 
-  const stopSession = () => {
+  const stopSession = useCallback(() => {
     if (agentRef.current) {
       agentRef.current.disconnect();
       agentRef.current = null;
     }
-  };
+    setIsMicOn(false);
+    setCurrentTranscript('');
+  }, []);
 
-  const sendMessage = (text: string) => {
-    agentRef.current?.send(text);
-  };
+  const sendMessage = useCallback((text: string) => {
+    if (!agentRef.current) {
+      setConnectionError('No agent available');
+      return;
+    }
+    
+    if (!isConnected) {
+      setConnectionError('Agent not connected');
+      return;
+    }
+    
+    agentRef.current.send(text);
+  }, [isConnected]);
 
-  const toggleMic = () => {
+  const toggleMic = useCallback(() => {
     const newState = !isMicOn;
     setIsMicOn(newState);
-    agentRef.current?.setMicEnabled?.(newState);
-  };
+    
+    if (agentRef.current?.setMicEnabled) {
+      agentRef.current.setMicEnabled(newState);
+    } else {
+      setConnectionError('Microphone control not available');
+    }
+  }, [isMicOn]);
 
-  const commitTurn = () => {
+  const commitTurn = useCallback(() => {
     if (isMicOn) {
       setIsMicOn(false);
       agentRef.current?.commitAudioTurn?.();
     }
-  };
+  }, [isMicOn]);
+
+  useEffect(() => {
+    return () => {
+      if (agentRef.current) {
+        agentRef.current.disconnect();
+      }
+    };
+  }, []);
 
   return {
     isConnected,
     isMicOn,
+    currentTranscript,
+    connectionError,
     startSession,
     stopSession,
     sendMessage,

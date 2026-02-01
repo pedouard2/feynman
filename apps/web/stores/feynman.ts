@@ -4,6 +4,34 @@ import { DEFAULT_PERSONA_ID } from '../lib/personas';
 
 type Step = 1 | 2 | 3 | 4;
 
+const REQUEST_TIMEOUT = 30000;
+
+function generateId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+}
+
+async function fetchWithTimeout(
+  url: string, 
+  options: RequestInit = {}, 
+  timeout = REQUEST_TIMEOUT
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -48,6 +76,8 @@ interface FeynmanState {
   provider: 'openai' | 'mock';
   sessions: Session[];
   worker: Worker | null;
+  error: string | null;
+  isLoading: boolean;
   
   currentPersonaId: string;
   currentConversationId: string | null;
@@ -64,6 +94,7 @@ interface FeynmanState {
   setProvider: (provider: 'openai' | 'mock') => void;
   updateConcepts: (concepts: Concept[]) => void;
   clearFeedback: () => void;
+  clearError: () => void;
   saveSession: () => void;
   loadSession: (sessionId: string) => void;
   
@@ -89,6 +120,8 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
   concepts: [],
   sessions: [],
   worker: null,
+  error: null,
+  isLoading: false,
   
   currentPersonaId: DEFAULT_PERSONA_ID,
   currentConversationId: null,
@@ -102,11 +135,12 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
   setProvider: (provider) => set({ provider }),
   updateConcepts: (concepts) => set({ concepts }),
   clearFeedback: () => set({ feedback: null }),
+  clearError: () => set({ error: null }),
   setCurrentPersonaId: (personaId) => set({ currentPersonaId: personaId }),
   
   addMessage: (role, text) => {
     const message: Message = {
-      id: Math.random().toString(36).substring(7),
+      id: generateId(),
       role,
       text,
       timestamp: Date.now()
@@ -117,33 +151,59 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
       messages: [...state.messages, message]
     }));
     
-    get().syncMessageToApi(role, text);
+    get().syncMessageToApi(role, text).catch(() => {
+      set({ error: 'Failed to save message. Your message may not be persisted.' });
+    });
   },
 
   syncMessageToApi: async (role, content) => {
     const conversationId = get().currentConversationId;
-    if (!conversationId) return;
+    if (!conversationId || conversationId.startsWith('mock_')) return;
     
-    try {
-      await fetch(`/api/conversations/${conversationId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role, content })
-      });
-    } catch (error) {
-      console.error('Failed to sync message to API:', error);
+    const response = await fetchWithTimeout(`/api/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, content })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to sync message');
     }
   },
 
   createConversation: async (personaId, title, context) => {
+    set({ isLoading: true, error: null });
+    
     try {
-      const response = await fetch('/api/conversations', {
+      const response = await fetchWithTimeout('/api/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ personaId, title, context })
       });
       
-      if (!response.ok) throw new Error('Failed to create conversation');
+      if (!response.ok) {
+        const mockId = `mock_${generateId()}`;
+        const mockConversation: Conversation = {
+          id: mockId,
+          personaId,
+          title: title || null,
+          context: context || null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        
+        set((state) => ({ 
+          currentConversationId: mockId,
+          currentPersonaId: personaId,
+          topic: context || '',
+          messages: [],
+          transcript: '',
+          conversations: [mockConversation, ...state.conversations],
+          isLoading: false
+        }));
+        
+        return mockId;
+      }
       
       const conversation = await response.json();
       set({ 
@@ -151,48 +211,83 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
         currentPersonaId: personaId,
         topic: context || '',
         messages: [],
-        transcript: ''
+        transcript: '',
+        isLoading: false
       });
       
-      get().loadConversations();
+      await get().loadConversations();
       return conversation.id;
     } catch (error) {
-      console.error('Failed to create conversation:', error);
-      return null;
+      const mockId = `mock_${generateId()}`;
+      const mockConversation: Conversation = {
+        id: mockId,
+        personaId,
+        title: title || null,
+        context: context || null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      set((state) => ({ 
+        currentConversationId: mockId,
+        currentPersonaId: personaId,
+        topic: context || '',
+        messages: [],
+        transcript: '',
+        conversations: [mockConversation, ...state.conversations],
+        isLoading: false,
+        error: 'Using offline mode - conversation may not be saved'
+      }));
+      
+      return mockId;
     }
   },
 
   loadConversations: async () => {
+    set({ isLoading: true });
+    
     try {
-      const response = await fetch('/api/conversations');
-      if (!response.ok) throw new Error('Failed to load conversations');
+      const response = await fetchWithTimeout('/api/conversations');
+      if (!response.ok) {
+        set({ conversations: [], isLoading: false });
+        return;
+      }
       
       const data = await response.json();
+      if (!Array.isArray(data)) {
+        set({ conversations: [], isLoading: false });
+        return;
+      }
+      
       const conversations: Conversation[] = data.map((c: Record<string, unknown>) => ({
-        id: c.id,
-        personaId: c.persona_id,
-        title: c.title,
-        context: c.context,
-        createdAt: c.created_at,
-        updatedAt: c.updated_at
+        id: c.id as string,
+        personaId: c.persona_id as string,
+        title: c.title as string | null,
+        context: c.context as string | null,
+        createdAt: c.created_at as string,
+        updatedAt: c.updated_at as string
       }));
       
-      set({ conversations });
-    } catch (error) {
-      console.error('Failed to load conversations:', error);
+      set({ conversations, isLoading: false });
+    } catch {
+      set({ conversations: [], isLoading: false });
     }
   },
 
   loadConversation: async (conversationId) => {
+    set({ isLoading: true, error: null });
+    
     try {
-      const response = await fetch(`/api/conversations/${conversationId}`);
-      if (!response.ok) throw new Error('Failed to load conversation');
+      const response = await fetchWithTimeout(`/api/conversations/${conversationId}`);
+      if (!response.ok) {
+        throw new Error('Failed to load conversation');
+      }
       
       const data = await response.json();
       const messages: Message[] = (data.messages || []).map((m: Record<string, unknown>) => ({
-        id: m.id,
+        id: m.id as string,
         role: m.role as 'user' | 'assistant',
-        text: m.content,
+        text: m.content as string,
         timestamp: new Date(m.created_at as string).getTime()
       }));
       
@@ -201,10 +296,15 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
         currentPersonaId: data.persona_id,
         topic: data.context || '',
         messages,
-        transcript: messages.map(m => m.text).join(' ')
+        transcript: messages.map(m => m.text).join(' '),
+        isLoading: false
       });
     } catch (error) {
-      console.error('Failed to load conversation:', error);
+      set({ 
+        error: error instanceof Error ? error.message : 'Failed to load conversation',
+        isLoading: false 
+      });
+      throw error;
     }
   },
 
@@ -221,6 +321,9 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
             feedback: result.feedback || null 
           });
        };
+       worker.onerror = () => {
+          set({ error: 'Failed to analyze explanation' });
+       };
        set({ worker });
     }
 
@@ -228,10 +331,13 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
       worker.postMessage({ transcript, topic });
     }
     
-    import('../lib/knowledge').then(async (mod) => {
-       const concepts = await mod.analyzeKnowledge(topic, transcript);
-       set({ concepts });
-    });
+    try {
+      const mod = await import('../lib/knowledge');
+      const concepts = await mod.analyzeKnowledge(topic, transcript);
+      set({ concepts });
+    } catch {
+      set({ concepts: [] });
+    }
   },
 
   saveSession: () => {
@@ -239,7 +345,7 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
     if (messages.length === 0) return;
 
     const newSession: Session = {
-      id: Math.random().toString(36).substring(7),
+      id: generateId(),
       topic: topic || 'Untitled Session',
       date: Date.now(),
       preview: messages[messages.length - 1].text.substring(0, 50) + '...',
@@ -250,7 +356,6 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
   },
 
   loadSession: (sessionId) => {
-    console.log(`Loading session ${sessionId}`);
     get().loadConversation(sessionId);
   },
 

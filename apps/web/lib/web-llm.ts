@@ -1,6 +1,5 @@
-import { CreateMLCEngine, MLCEngineInterface, prebuiltAppConfig } from "@mlc-ai/web-llm";
+import { CreateMLCEngine, MLCEngineInterface, prebuiltAppConfig, ChatCompletionMessageParam } from "@mlc-ai/web-llm";
 
-// Using Llama-3.1-8B (stable ID)
 const SELECTED_MODEL = "Llama-3.1-8B-Instruct-q4f32_1-MLC";
 
 export class WebLLMService {
@@ -18,21 +17,16 @@ export class WebLLMService {
     this.isLoading = true;
     try {
       this.engine = await CreateMLCEngine(SELECTED_MODEL, {
-        appConfig: prebuiltAppConfig, // Explicitly pass default config
+        appConfig: prebuiltAppConfig,
         initProgressCallback: (report: { text: string }) => {
-          if (this.onProgressCallback) {
-            this.onProgressCallback(report.text);
-          }
-          console.log("WebLLM Init:", report.text);
+          this.onProgressCallback?.(report.text);
         },
       });
-      console.log("WebLLM Engine Loaded");
     } catch (e) {
-      console.error("Failed to load WebLLM:", e);
-      throw e;
-    } finally {
       this.isLoading = false;
+      throw e;
     }
+    this.isLoading = false;
   }
 
   async generateResponse(userMessage: string, systemPrompt: string): Promise<string> {
@@ -42,18 +36,18 @@ export class WebLLMService {
     
     if (!this.engine) throw new Error("Engine failed to initialize");
 
-    const messages = [
+    const messages: ChatCompletionMessageParam[] = [
       { role: "system", content: systemPrompt },
       { role: "user", content: userMessage }
     ];
 
     const reply = await this.engine.chat.completions.create({
-      messages: messages as any,
+      messages,
       temperature: 0.7,
-      max_tokens: 150, // Keep it brief for conversation
+      max_tokens: 150,
     });
 
-    return reply.choices[0].message.content || "";
+    return reply.choices?.[0]?.message?.content || "";
   }
 }
 

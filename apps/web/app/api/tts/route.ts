@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
-export const dynamic = 'force-dynamic'; // Prevent static caching
+export const dynamic = 'force-dynamic';
+
+const MAX_TEXT_LENGTH = 4096;
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -9,10 +11,25 @@ const openai = new OpenAI({
 
 export async function POST(req: Request) {
   try {
-    const { text } = await req.json();
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({ error: 'TTS service not configured' }, { status: 503 });
+    }
 
-    if (!text) {
-      return NextResponse.json({ error: 'Missing text' }, { status: 400 });
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+
+    const { text } = body;
+
+    if (!text || typeof text !== 'string') {
+      return NextResponse.json({ error: 'text is required and must be a string' }, { status: 400 });
+    }
+
+    if (text.length > MAX_TEXT_LENGTH) {
+      return NextResponse.json({ error: `text must be less than ${MAX_TEXT_LENGTH} characters` }, { status: 400 });
     }
 
     const mp3 = await openai.audio.speech.create({
@@ -29,8 +46,7 @@ export async function POST(req: Request) {
         'Content-Length': buffer.length.toString(),
       },
     });
-  } catch (error) {
-    console.error("OpenAI TTS Error:", error);
-    return NextResponse.json({ error: 'TTS Failed' }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'TTS generation failed' }, { status: 500 });
   }
 }

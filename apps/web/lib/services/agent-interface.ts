@@ -7,6 +7,9 @@ export interface AgentConfig {
   onMessage: (role: 'user' | 'assistant', text: string) => void;
   onStateChange: (state: 'idle' | 'listening' | 'thinking' | 'talking') => void;
   onAudioTrack?: (stream: MediaStream) => void;
+  onTranscriptUpdate?: (text: string, isFinal: boolean) => void;
+  onError?: (error: Error) => void;
+  onFallback?: () => void;
 }
 
 export interface AgentService {
@@ -17,13 +20,55 @@ export interface AgentService {
   commitAudioTurn?(): void;
 }
 
-// ------------------------------------------------------------------
-// LOCAL AGENT (WebLLM + Browser SpeechSynthesis + SpeechRecognition)
-// Fully offline/local - no API costs
-// ------------------------------------------------------------------
+const OPENAI_REALTIME_URL = process.env.NEXT_PUBLIC_OPENAI_REALTIME_URL || 'https://api.openai.com/v1/realtime';
+const OPENAI_REALTIME_MODEL = process.env.NEXT_PUBLIC_OPENAI_REALTIME_MODEL || 'gpt-4o-realtime-preview-2024-12-17';
+
+interface SpeechRecognitionEvent {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  isFinal: boolean;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string;
+}
+
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => SpeechRecognitionInstance;
+    webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+  }
+}
+
 export class LocalAgent implements AgentService {
   private config: AgentConfig;
-  private recognition: any;
+  private recognition: SpeechRecognitionInstance | null = null;
   private isProcessing = false;
   private isMicEnabled = false;
   private pendingTranscripts: string[] = [];
@@ -34,14 +79,14 @@ export class LocalAgent implements AgentService {
 
   async connect() {
     this.config.onStateChange('idle');
-    
     webLLM.initialize();
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      this.recognition = new SpeechRecognition();
+    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (SpeechRecognitionAPI) {
+      this.recognition = new SpeechRecognitionAPI();
       this.recognition.continuous = true;
-      this.recognition.interimResults = false;
+      this.recognition.interimResults = true;
       this.recognition.lang = 'en-US';
 
       this.recognition.onstart = () => {
@@ -52,16 +97,42 @@ export class LocalAgent implements AgentService {
 
       this.recognition.onend = () => {
         if (this.isMicEnabled && !this.isProcessing) {
-          try { this.recognition.start(); } catch {}
+          try { 
+            this.recognition?.start(); 
+          } catch {
+            this.config.onError?.(new Error('Failed to restart speech recognition'));
+          }
         }
       };
 
-      this.recognition.onresult = (event: any) => {
-        const transcript = event.results[event.results.length - 1][0].transcript.trim();
-        if (transcript && this.isMicEnabled) {
-          this.pendingTranscripts.push(transcript);
+      this.recognition.onerror = (event) => {
+        this.config.onError?.(new Error(`Speech recognition error: ${event.error}`));
+      };
+
+      this.recognition.onresult = (event) => {
+        let interim = '';
+        let final = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            final += transcript;
+          } else {
+            interim += transcript;
+          }
+        }
+
+        if (final && this.isMicEnabled) {
+          this.pendingTranscripts.push(final);
+          const fullTranscript = this.pendingTranscripts.join(' ');
+          this.config.onTranscriptUpdate?.(fullTranscript, false);
+        } else if (interim && this.isMicEnabled) {
+          const fullInterim = [...this.pendingTranscripts, interim].join(' ');
+          this.config.onTranscriptUpdate?.(fullInterim, false);
         }
       };
+    } else {
+      this.config.onError?.(new Error('SpeechRecognition API not available in this browser'));
     }
     
     this.config.onConnect();
@@ -72,13 +143,28 @@ export class LocalAgent implements AgentService {
     if (enabled) {
       this.pendingTranscripts = [];
       this.config.onStateChange('listening');
+      
       if (this.recognition) {
-        try { this.recognition.start(); } catch {}
+        try { 
+          this.recognition.start();
+        } catch {
+          this.config.onError?.(new Error('Failed to start speech recognition'));
+        }
       }
+      
+      this.config.onTranscriptUpdate?.('', false);
     } else {
       this.config.onStateChange('idle');
+      
       if (this.recognition) {
-        try { this.recognition.stop(); } catch {}
+        try { 
+          this.recognition.stop();
+        } catch { /* no-op */ }
+      }
+      
+      if (this.pendingTranscripts.length > 0) {
+        const finalText = this.pendingTranscripts.join(' ');
+        this.config.onTranscriptUpdate?.(finalText, true);
       }
     }
   }
@@ -89,8 +175,11 @@ export class LocalAgent implements AgentService {
       this.pendingTranscripts = [];
       this.isMicEnabled = false;
       if (this.recognition) {
-        try { this.recognition.stop(); } catch {}
+        try { 
+          this.recognition.stop(); 
+        } catch { /* no-op */ }
       }
+      this.config.onTranscriptUpdate?.(fullTranscript, true);
       this.handleUserMessage(fullTranscript);
     }
   }
@@ -101,13 +190,13 @@ export class LocalAgent implements AgentService {
     this.config.onMessage('user', text);
 
     try {
-        const response = await webLLM.generateResponse(text, PERSONA_SYSTEM_PROMPT);
-        this.config.onMessage('assistant', response);
-        this.speak(response);
+      const response = await webLLM.generateResponse(text, PERSONA_SYSTEM_PROMPT);
+      this.config.onMessage('assistant', response);
+      this.speak(response);
     } catch (e) {
-        console.error("LocalAgent Error:", e);
-        this.config.onStateChange('idle');
-        this.isProcessing = false;
+      this.config.onError?.(e instanceof Error ? e : new Error('LocalAgent processing failed'));
+      this.config.onStateChange('idle');
+      this.isProcessing = false;
     }
   }
 
@@ -116,14 +205,18 @@ export class LocalAgent implements AgentService {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.1;
     utterance.onend = () => {
-        this.config.onStateChange('idle');
-        this.isProcessing = false;
+      this.config.onStateChange('idle');
+      this.isProcessing = false;
     };
     window.speechSynthesis.speak(utterance);
   }
 
   disconnect() {
-    if (this.recognition) this.recognition.stop();
+    if (this.recognition) {
+      try {
+        this.recognition.stop();
+      } catch { /* no-op */ }
+    }
     window.speechSynthesis.cancel();
     this.config.onDisconnect();
   }
@@ -133,15 +226,14 @@ export class LocalAgent implements AgentService {
   }
 }
 
-// ------------------------------------------------------------------
-// REAL AGENT (OpenAI Realtime WebRTC)
-// ------------------------------------------------------------------
 export class RealtimeAgent implements AgentService {
   private config: AgentConfig;
   private pc: RTCPeerConnection | null = null;
   private dc: RTCDataChannel | null = null;
   private audioEl: HTMLAudioElement;
   private isMicEnabled = false;
+  private currentTranscript = '';
+  private reconnectTimeout: NodeJS.Timeout | null = null;
 
   constructor(config: AgentConfig) {
     this.config = config;
@@ -151,171 +243,214 @@ export class RealtimeAgent implements AgentService {
 
   async connect() {
     try {
-        const tokenResponse = await fetch('/api/session', { method: 'POST' });
-        const data = await tokenResponse.json();
+      const tokenResponse = await fetch('/api/session', { method: 'POST' });
+      
+      if (!tokenResponse.ok) {
+        throw new Error(`Session API error: ${tokenResponse.status}`);
+      }
+      
+      const data = await tokenResponse.json();
 
-        if (data.mock) {
-            throw new Error("Backend returned mock mode, but RealtimeAgent was requested.");
+      if (data.mock) {
+        throw new Error('Backend returned mock mode');
+      }
+
+      if (!data.client_secret?.value) {
+        throw new Error('No client_secret received from session endpoint');
+      }
+
+      const EPHEMERAL_KEY = data.client_secret.value;
+      this.pc = new RTCPeerConnection();
+
+      this.pc.ontrack = (e) => {
+        this.audioEl.srcObject = e.streams[0];
+        this.config.onAudioTrack?.(e.streams[0]);
+      };
+
+      const ms = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
         }
+      });
+      this.pc.addTrack(ms.getTracks()[0]);
 
-        const EPHEMERAL_KEY = data.client_secret.value;
-        this.pc = new RTCPeerConnection();
+      this.dc = this.pc.createDataChannel('oai-events');
+      this.dc.onopen = () => {
+        this.disableServerVAD();
+        this.config.onConnect();
+      };
+      this.dc.onerror = () => {
+        this.config.onError?.(new Error('Data channel error'));
+      };
+      this.dc.onclose = () => {
+        this.config.onDisconnect();
+      };
+      this.dc.onmessage = (e) => {
+        try {
+          this.handleEvent(JSON.parse(e.data));
+        } catch {
+          this.config.onError?.(new Error('Failed to parse data channel message'));
+        }
+      };
 
-        // Audio Handling
-        this.pc.ontrack = (e) => {
-            this.audioEl.srcObject = e.streams[0];
-            if (this.config.onAudioTrack) this.config.onAudioTrack(e.streams[0]);
-        };
+      const offer = await this.pc.createOffer();
+      await this.pc.setLocalDescription(offer);
 
-        // Add Local Mic with echo prevention
-        const ms = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            }
-        });
-        this.pc.addTrack(ms.getTracks()[0]);
+      const sdpResponse = await fetch(`${OPENAI_REALTIME_URL}?model=${OPENAI_REALTIME_MODEL}`, {
+        method: 'POST',
+        body: offer.sdp,
+        headers: {
+          Authorization: `Bearer ${EPHEMERAL_KEY}`,
+          'Content-Type': 'application/sdp'
+        },
+      });
 
-        // Data Channel
-        this.dc = this.pc.createDataChannel("oai-events");
-        this.dc.onopen = () => {
-          this.disableServerVAD();
-          this.config.onConnect();
-        };
-        this.dc.onmessage = (e) => this.handleEvent(JSON.parse(e.data));
+      if (!sdpResponse.ok) {
+        throw new Error(`SDP exchange failed: ${sdpResponse.status}`);
+      }
 
-        // Offer/Answer
-        const offer = await this.pc.createOffer();
-        await this.pc.setLocalDescription(offer);
-
-        const baseUrl = "https://api.openai.com/v1/realtime";
-        const model = "gpt-4o-realtime-preview-2024-12-17";
-        const sdpResponse = await fetch(`${baseUrl}?model=${model}`, {
-            method: "POST",
-            body: offer.sdp,
-            headers: {
-                Authorization: `Bearer ${EPHEMERAL_KEY}`,
-                "Content-Type": "application/sdp"
-            },
-        });
-
-        const answer: RTCSessionDescriptionInit = {
-            type: "answer",
-            sdp: await sdpResponse.text(),
-        };
-        await this.pc.setRemoteDescription(answer);
+      const answer: RTCSessionDescriptionInit = {
+        type: 'answer',
+        sdp: await sdpResponse.text(),
+      };
+      await this.pc.setRemoteDescription(answer);
 
     } catch (e) {
-        console.error("Realtime Connection Failed", e);
-        this.config.onDisconnect();
+      this.config.onDisconnect();
+      throw e;
     }
   }
 
-  private handleEvent(evt: any) {
-      if (evt.type === 'response.audio_transcript.done') {
-          this.config.onMessage('assistant', evt.transcript);
-      }
-      if (evt.type === 'conversation.item.input_audio_transcription.completed') {
+  private handleEvent(evt: { type: string; delta?: string; transcript?: string }) {
+    switch (evt.type) {
+      case 'conversation.item.input_audio_transcription.delta':
+        if (evt.delta) {
+          this.currentTranscript += evt.delta;
+          this.config.onTranscriptUpdate?.(this.currentTranscript, false);
+        }
+        break;
+        
+      case 'conversation.item.input_audio_transcription.completed':
+        if (evt.transcript) {
           this.config.onMessage('user', evt.transcript);
-      }
-      if (evt.type === 'response.function_call_arguments.done') {
-           // Handle tools if needed
-      }
-
-      if (evt.type === 'response.content_part.added') {
-          this.config.onStateChange('talking');
-          this.updateMicTrack(false);
-      }
-      if (this.pc && evt.type === 'response.done') {
-           this.config.onStateChange('idle');
-           setTimeout(() => {
-              if (this.isMicEnabled) {
-                this.updateMicTrack(true);
-              }
-           }, 1500);
-       }
+          this.config.onTranscriptUpdate?.(evt.transcript, true);
+        }
+        this.currentTranscript = '';
+        break;
+        
+      case 'response.audio_transcript.done':
+        if (evt.transcript) {
+          this.config.onMessage('assistant', evt.transcript);
+        }
+        break;
+        
+      case 'response.content_part.added':
+        this.config.onStateChange('talking');
+        this.updateMicTrack(false);
+        break;
+        
+      case 'response.done':
+        this.config.onStateChange('idle');
+        if (this.reconnectTimeout) {
+          clearTimeout(this.reconnectTimeout);
+        }
+        this.reconnectTimeout = setTimeout(() => {
+          if (this.isMicEnabled) {
+            this.updateMicTrack(true);
+          }
+        }, 1500);
+        break;
+    }
   }
 
   private disableServerVAD() {
-      if (this.dc && this.dc.readyState === 'open') {
-          this.dc.send(JSON.stringify({
-              type: "session.update",
-              session: {
-                  turn_detection: null,
-                  input_audio_transcription: { model: "whisper-1" }
-              }
-          }));
-      }
+    if (this.dc?.readyState === 'open') {
+      this.dc.send(JSON.stringify({
+        type: 'session.update',
+        session: {
+          turn_detection: null,
+          input_audio_transcription: { model: 'whisper-1' }
+        }
+      }));
+    }
   }
 
   private updateMicTrack(enabled: boolean) {
-      if (this.pc) {
-          const senders = this.pc.getSenders();
-          const audioSender = senders.find(s => s.track?.kind === 'audio');
-          if (audioSender && audioSender.track) {
-              audioSender.track.enabled = enabled;
-          }
+    if (this.pc) {
+      const senders = this.pc.getSenders();
+      const audioSender = senders.find(s => s.track?.kind === 'audio');
+      if (audioSender?.track) {
+        audioSender.track.enabled = enabled;
       }
+    }
   }
 
   setMicEnabled(enabled: boolean) {
+    if (enabled) {
       this.isMicEnabled = enabled;
-      if (enabled) {
-          if (this.dc && this.dc.readyState === 'open') {
-              this.dc.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
+      this.currentTranscript = '';
+      if (this.dc?.readyState === 'open') {
+        this.dc.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+        this.dc.send(JSON.stringify({
+          type: 'session.update',
+          session: {
+            input_audio_transcription: { model: 'whisper-1' }
           }
-          this.config.onStateChange('listening');
-      } else {
-          this.config.onStateChange('idle');
+        }));
       }
+      this.config.onStateChange('listening');
+      this.config.onTranscriptUpdate?.('', false);
       this.updateMicTrack(enabled);
+    } else {
+      this.commitAudioTurn();
+    }
   }
 
   commitAudioTurn() {
-      if (this.dc && this.dc.readyState === 'open') {
-          this.config.onStateChange('thinking');
-          this.updateMicTrack(false);
-          this.isMicEnabled = false;
-          this.dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-          this.dc.send(JSON.stringify({ type: "response.create" }));
-      }
+    if (this.dc?.readyState === 'open') {
+      this.updateMicTrack(false);
+      this.isMicEnabled = false;
+      this.dc.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+      this.config.onStateChange('idle');
+    }
   }
 
   disconnect() {
-      this.pc?.close();
-      this.pc = null;
-      this.config.onDisconnect();
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+    }
+    this.pc?.close();
+    this.pc = null;
+    this.config.onDisconnect();
   }
 
   send(text: string) {
-      if (this.dc && this.dc.readyState === 'open') {
-          // Send user message
-          this.dc.send(JSON.stringify({
-              type: "conversation.item.create",
-              item: {
-                  type: "message",
-                  role: "user",
-                  content: [
-                      { type: "input_text", text: text }
-                  ]
-              }
-          }));
+    if (this.dc?.readyState === 'open') {
+      this.config.onMessage('user', text);
+      
+      this.dc.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [
+            { type: 'input_text', text: text }
+          ]
+        }
+      }));
 
-          // Trigger response generation
-          this.dc.send(JSON.stringify({
-              type: "response.create"
-          }));
-      } else {
-          console.error("Data Channel not open. Cannot send text.");
-      }
+      this.dc.send(JSON.stringify({
+        type: 'response.create'
+      }));
+    } else {
+      this.config.onError?.(new Error('Cannot send: data channel not open'));
+    }
   }
 }
 
-// ------------------------------------------------------------------
-// FACTORY
-// ------------------------------------------------------------------
 export function createAgent(type: 'mock' | 'local' | 'real' | 'openai', config: AgentConfig): AgentService {
-    if (type === 'mock' || type === 'local') return new LocalAgent(config);
-    return new RealtimeAgent(config);
+  if (type === 'mock' || type === 'local') return new LocalAgent(config);
+  return new RealtimeAgent(config);
 }

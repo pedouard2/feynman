@@ -10,14 +10,22 @@ export interface ChatDrawerRightProps {
   isOpen: boolean;
   onToggle: () => void;
   onSendMessage: (text: string) => void;
+  onMicToggle: () => void;
+  isMicOn: boolean;
+  currentTranscript: string;
   sessionId: string | null;
 }
 
-export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessionId }: ChatDrawerRightProps) {
+export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, onMicToggle, isMicOn, currentTranscript, sessionId }: ChatDrawerRightProps) {
   const { messages, concepts } = useFeynmanStore();
   const [inputText, setInputText] = useState('');
-  const [isMicActive, setIsMicActive] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (currentTranscript) {
+      setInputText(currentTranscript);
+    }
+  }, [currentTranscript]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -35,21 +43,18 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
     setInputText('');
   };
 
-  const handleMicToggle = () => {
-    setIsMicActive(!isMicActive);
-  };
-
   return (
     <>
       <button
         onClick={onToggle}
+        aria-label={isOpen ? "Close chat panel" : "Open chat panel"}
+        aria-expanded={isOpen}
         className={clsx(
           "fixed top-1/2 -translate-y-1/2 bg-primary/20 hover:bg-primary/30 backdrop-blur-sm border border-primary/30 text-foreground transition-all hover:scale-110 z-40",
           isOpen ? "right-[284px] p-2 rounded-full" : "right-4 p-2 rounded-full"
         )}
-        title={isOpen ? "Close chat" : "Open chat"}
       >
-        <PanelRight size={16} className={clsx("transition-transform", isOpen && "rotate-180")} />
+        <PanelRight size={16} className={clsx("transition-transform", isOpen && "rotate-180")} aria-hidden="true" />
       </button>
 
       <AnimatePresence>
@@ -130,29 +135,36 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
                   <input
                     type="text"
                     value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    placeholder="Type a message..."
-                    className="w-full bg-secondary/30 border border-primary/20 rounded-full pl-4 pr-12 py-2 text-foreground text-sm placeholder-foreground/40 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
+                    onChange={(e) => !isMicOn && setInputText(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && !isMicOn && handleSend()}
+                    placeholder={isMicOn ? "Listening..." : "Type a message..."}
+                    disabled={isMicOn}
+                    className={clsx(
+                      "w-full bg-secondary/30 border border-primary/20 rounded-full pl-4 pr-12 py-2 text-foreground text-sm placeholder-foreground/40 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors",
+                      isMicOn && "opacity-70 cursor-not-allowed"
+                    )}
                   />
                   <button
-                    onClick={handleMicToggle}
+                    onClick={onMicToggle}
+                    aria-label={isMicOn ? 'Stop microphone' : 'Start microphone'}
+                    aria-pressed={isMicOn}
                     className={clsx(
                       'absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-colors',
-                      isMicActive
+                      isMicOn
                         ? 'bg-accent-warm text-foreground'
                         : 'text-foreground/50 hover:text-foreground hover:bg-primary/20'
                     )}
                   >
-                    {isMicActive ? <Mic size={16} /> : <MicOff size={16} />}
+                    {isMicOn ? <Mic size={16} aria-hidden="true" /> : <MicOff size={16} aria-hidden="true" />}
                   </button>
                 </div>
                 <button
                   onClick={handleSend}
-                  disabled={!inputText.trim()}
+                  disabled={!inputText.trim() || isMicOn}
+                  aria-label="Send message"
                   className="p-2 bg-primary hover:bg-primary/80 disabled:bg-secondary/30 disabled:text-foreground/30 rounded-full text-foreground transition-colors"
                 >
-                  <Send size={18} />
+                  <Send size={18} aria-hidden="true" />
                 </button>
               </div>
             </div>

@@ -20,8 +20,7 @@ export async function generateResponse(messages: { role: 'user' | 'assistant' | 
     });
 
     return completion.choices[0].message.content || "I'm not sure what to say.";
-  } catch (error) {
-    console.error("LLM Error:", error);
+  } catch {
     return "Sorry, I had trouble thinking of a response.";
   }
 }

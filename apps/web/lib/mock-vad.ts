@@ -21,7 +21,8 @@ export class MockVAD {
   async start() {
     try {
       this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      this.audioContext = new AudioContextClass();
       const source = this.audioContext.createMediaStreamSource(this.mediaStream);
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 256;
@@ -63,9 +64,7 @@ export class MockVAD {
         }
       }, 100);
 
-    } catch (e) {
-      console.error("Failed to start Mock VAD", e);
-    }
+    } catch { /* no-op */ }
   }
 
   stop() {

@@ -2,15 +2,17 @@
 
 import { useFeynmanStore } from '../stores/feynman';
 import { DEFAULT_PERSONAS } from '../lib/personas';
-import { Plus } from 'lucide-react';
+import { Plus, Loader2 } from 'lucide-react';
 
 interface SessionGridProps {
   onSessionClick: (sessionId: string) => void;
   onNewSession: () => void;
+  isLoading?: boolean;
 }
 
-export default function SessionGrid({ onSessionClick, onNewSession }: SessionGridProps) {
-  const { conversations } = useFeynmanStore();
+export default function SessionGrid({ onSessionClick, onNewSession, isLoading }: SessionGridProps) {
+  const { conversations, isLoading: storeLoading } = useFeynmanStore();
+  const loading = isLoading || storeLoading;
 
   const getPersonaInfo = (personaId: string) => {
     const persona = DEFAULT_PERSONAS[personaId];
@@ -20,20 +22,30 @@ export default function SessionGrid({ onSessionClick, onNewSession }: SessionGri
     };
   };
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-background text-foreground">
+        <Loader2 size={48} className="animate-spin text-primary mb-4" aria-hidden="true" />
+        <p className="text-foreground/60" role="status">Loading sessions...</p>
+      </div>
+    );
+  }
+
   if (conversations.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-background text-foreground">
         <div className="text-center max-w-md">
-          <div className="text-6xl mb-6">📚</div>
+          <div className="text-6xl mb-6" aria-hidden="true">📚</div>
           <h2 className="text-2xl font-bold mb-4">No sessions yet</h2>
           <p className="text-foreground/60 mb-8">
             Create your first session to start learning with AI personas
           </p>
           <button
             onClick={onNewSession}
+            aria-label="Create your first learning session"
             className="px-6 py-3 bg-primary hover:bg-primary/80 text-foreground font-medium rounded-[10px] flex items-center gap-2 mx-auto transition-colors"
           >
-            <Plus size={20} />
+            <Plus size={20} aria-hidden="true" />
             Create Your First Session
           </button>
         </div>
@@ -50,9 +62,10 @@ export default function SessionGrid({ onSessionClick, onNewSession }: SessionGri
           </h1>
           <button
             onClick={onNewSession}
+            aria-label="Create new learning session"
             className="px-6 py-3 bg-primary hover:bg-primary/80 text-foreground font-medium rounded-[10px] flex items-center gap-2 transition-colors"
           >
-            <Plus size={20} />
+            <Plus size={20} aria-hidden="true" />
             New Session
           </button>
         </div>
@@ -64,6 +77,7 @@ export default function SessionGrid({ onSessionClick, onNewSession }: SessionGri
               <button
                 key={conversation.id}
                 onClick={() => onSessionClick(conversation.id)}
+                aria-label={`Open session: ${conversation.title || conversation.context || 'Untitled Session'}`}
                 className="bg-secondary/30 hover:bg-accent-blue/20 transition-colors rounded-[10px] p-6 text-left border border-primary/20 group"
               >
                 <div className="flex items-start gap-4">

@@ -1,21 +1,34 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useFeynmanStore } from '../stores/feynman';
 import { AlertTriangle, X } from 'lucide-react';
 
 export default function JudgeFeedback() {
-  const { feedback, clearFeedback } = useFeynmanStore();
+  const feedback = useFeynmanStore(state => state.feedback);
+  const clearFeedback = useFeynmanStore(state => state.clearFeedback);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleClearFeedback = useCallback(() => {
+    clearFeedback();
+  }, [clearFeedback]);
 
   useEffect(() => {
     if (feedback) {
-      const timer = setTimeout(() => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+      timerRef.current = setTimeout(() => {
         clearFeedback();
-      }, 8000); // 8 seconds to read
-      return () => clearTimeout(timer);
+      }, 8000);
+      return () => {
+        if (timerRef.current) {
+          clearTimeout(timerRef.current);
+        }
+      };
     }
-  }, [feedback, clearFeedback]);
+  }, [feedback]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <AnimatePresence>
@@ -37,10 +50,11 @@ export default function JudgeFeedback() {
                 </p>
             </div>
             <button 
-                onClick={clearFeedback}
+                onClick={handleClearFeedback}
+                aria-label="Dismiss feedback"
                 className="opacity-50 hover:opacity-100 transition-opacity"
             >
-                <X size={18} />
+                <X size={18} aria-hidden="true" />
             </button>
           </div>
         </motion.div>

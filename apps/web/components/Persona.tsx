@@ -58,9 +58,7 @@ export default function Persona() {
                    input.value = target.value;
                }
            }
-       } catch (e) {
-           console.warn(`Failed to set input ${target.name}`, e);
-       }
+       } catch { /* no-op */ }
     });
 
   }, [agentState, rive, activePersona]);
@@ -77,7 +75,9 @@ export default function Persona() {
     try {
         const inputs = rive.stateMachineInputs(activePersona.stateMachineName);
         inputDebug = inputs.map(i => `${i.name} (${i.type})`);
-    } catch(e) {}
+    } catch {
+        // Rive inputs may not be available yet during initialization
+    }
     
     setDebugInfo([
         `File: ${activePersona.name}`,
@@ -97,15 +97,6 @@ export default function Persona() {
         {/* We can put a glow effect here using Framer Motion as a backup */}
       </div>
 
-      {/* DEBUG OVERLAY */}
-      <div className="absolute top-20 left-4 bg-black/50 text-white p-2 text-xs font-mono pointer-events-auto z-50 max-h-96 overflow-auto">
-        <h3 className="font-bold">Persona Debug:</h3>
-        {debugInfo.length === 0 ? "Loading..." : (
-            <ul>
-                {debugInfo.map((n, i) => <li key={i}>{n}</li>)}
-            </ul>
-        )}
-      </div>
     </div>
   );
 }

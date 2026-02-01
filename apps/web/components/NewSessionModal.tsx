@@ -6,6 +6,8 @@ import { X, Plus } from 'lucide-react';
 import { getAllPersonas } from '../lib/personas';
 import clsx from 'clsx';
 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 interface NewSessionModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -16,7 +18,7 @@ export default function NewSessionModal({ isOpen, onClose, onComplete }: NewSess
   const [currentStep, setCurrentStep] = useState<'persona' | 'source'>('persona');
   const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(null);
   const [sourceText, setSourceText] = useState('');
-  const [showCreatePersona, setShowCreatePersona] = useState(false);
+  const [_showCreatePersona, _setShowCreatePersona] = useState(false);
 
   const personas = getAllPersonas();
 
@@ -41,7 +43,6 @@ export default function NewSessionModal({ isOpen, onClose, onComplete }: NewSess
     setCurrentStep('persona');
     setSelectedPersonaId(null);
     setSourceText('');
-    setShowCreatePersona(false);
   };
 
   return (
@@ -71,9 +72,10 @@ export default function NewSessionModal({ isOpen, onClose, onComplete }: NewSess
               </div>
               <button
                 onClick={handleClose}
+                aria-label="Close modal"
                 className="text-foreground/50 hover:text-foreground transition-colors"
               >
-                <X size={24} />
+                <X size={24} aria-hidden="true" />
               </button>
             </div>
 
@@ -109,15 +111,15 @@ export default function NewSessionModal({ isOpen, onClose, onComplete }: NewSess
                       </button>
                     ))}
 
-                    <button
-                      onClick={() => setShowCreatePersona(true)}
-                      className="w-full text-left p-4 rounded-[10px] border border-dashed border-primary/30 hover:border-primary/50 hover:bg-secondary/20 transition-colors text-foreground/60 hover:text-foreground flex items-center gap-3"
+                    <div
+                      className="w-full text-left p-4 rounded-[10px] border border-dashed border-primary/30 bg-secondary/10 text-foreground/40 flex items-center gap-3 cursor-not-allowed"
+                      aria-disabled="true"
                     >
-                      <div className="w-10 h-10 rounded-full border border-primary/30 flex items-center justify-center">
-                        <Plus size={20} />
+                      <div className="w-10 h-10 rounded-full border border-primary/20 flex items-center justify-center">
+                        <Plus size={20} aria-hidden="true" />
                       </div>
-                      <span className="text-sm font-medium">Create New Persona</span>
-                    </button>
+                      <span className="text-sm font-medium">Custom personas coming soon</span>
+                    </div>
                   </div>
                 </div>
               )}
