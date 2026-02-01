@@ -44,8 +44,8 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
       <button
         onClick={onToggle}
         className={clsx(
-          "fixed top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 text-white transition-all hover:scale-110 z-40",
-          isOpen ? "right-[400px] p-2 rounded-full" : "right-4 p-2 rounded-full"
+          "fixed top-1/2 -translate-y-1/2 bg-primary/20 hover:bg-primary/30 backdrop-blur-sm border border-primary/30 text-foreground transition-all hover:scale-110 z-40",
+          isOpen ? "right-[284px] p-2 rounded-full" : "right-4 p-2 rounded-full"
         )}
         title={isOpen ? "Close chat" : "Open chat"}
       >
@@ -55,20 +55,20 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 400, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
+            initial={{ x: 280, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 280, opacity: 0 }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="h-full bg-neutral-900 border-l border-white/10 flex flex-col shadow-2xl overflow-hidden"
+            className="fixed right-0 top-0 bottom-0 w-[280px] bg-background border-l border-primary/20 flex flex-col shadow-lg overflow-hidden z-50"
           >
-            <div className="p-4 border-b border-white/10 flex items-center justify-between flex-shrink-0">
-              <h3 className="text-lg font-semibold text-white">Chat</h3>
+            <div className="p-4 border-b border-primary/20 flex items-center justify-between flex-shrink-0">
+              <h3 className="text-lg font-semibold text-foreground">Chat</h3>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {concepts.length > 0 && (
-                <div className="p-4 bg-white/5 rounded-xl border border-white/10">
-                  <h4 className="text-xs font-bold text-white/60 mb-3 uppercase tracking-wider">
+                <div className="p-4 bg-secondary/20 rounded-[10px] border border-primary/20">
+                  <h4 className="text-xs font-bold text-foreground/60 mb-3 uppercase tracking-wider">
                     Concept Coverage
                   </h4>
                   <div className="space-y-2">
@@ -78,22 +78,22 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
                           className={clsx(
                             'w-2 h-2 rounded-full',
                             c.status === 'covered'
-                              ? 'bg-green-400'
+                              ? 'bg-accent-green'
                               : c.status === 'partial'
-                              ? 'bg-yellow-400'
-                              : 'bg-red-400'
+                              ? 'bg-accent-warm'
+                              : 'bg-accent-warm/60'
                           )}
                         />
                         <span
                           className={clsx(
                             'text-sm',
-                            c.status === 'covered' ? 'text-white' : 'text-white/50'
+                            c.status === 'covered' ? 'text-foreground' : 'text-foreground/50'
                           )}
                         >
                           {c.name}
                         </span>
                         {c.status === 'covered' && (
-                          <span className="text-xs text-green-400 ml-auto">✓</span>
+                          <span className="text-xs text-accent-green ml-auto">✓</span>
                         )}
                       </div>
                     ))}
@@ -105,7 +105,10 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
                 <div
                   key={msg.id}
                   className={clsx(
-                   
+                    'p-3 rounded-[10px]',
+                    msg.role === 'user' 
+                      ? 'bg-primary/20 text-foreground ml-8' 
+                      : 'bg-secondary/20 text-foreground mr-8'
                   )}
                 >
                   {msg.text}
@@ -113,7 +116,7 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
               ))}
 
               {messages.length === 0 && (
-                <div className="text-center text-white/40 text-sm mt-10">
+                <div className="text-center text-foreground/40 text-sm mt-10">
                   Start the conversation...
                 </div>
               )}
@@ -121,7 +124,7 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
               <div ref={messagesEndRef} />
             </div>
 
-            <div className="p-4 border-t border-white/10 flex-shrink-0">
+            <div className="p-4 border-t border-primary/20 flex-shrink-0">
               <div className="flex gap-2 items-center">
                 <div className="flex-1 relative">
                   <input
@@ -130,15 +133,15 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
                     onChange={(e) => setInputText(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                     placeholder="Type a message..."
-                    className="w-full bg-white/5 border border-white/10 rounded-full pl-4 pr-12 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                    className="w-full bg-secondary/30 border border-primary/20 rounded-full pl-4 pr-12 py-2 text-foreground text-sm placeholder-foreground/40 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
                   />
                   <button
                     onClick={handleMicToggle}
                     className={clsx(
                       'absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-colors',
                       isMicActive
-                        ? 'bg-red-500 text-white'
-                        : 'text-white/50 hover:text-white hover:bg-white/10'
+                        ? 'bg-accent-warm text-foreground'
+                        : 'text-foreground/50 hover:text-foreground hover:bg-primary/20'
                     )}
                   >
                     {isMicActive ? <Mic size={16} /> : <MicOff size={16} />}
@@ -147,7 +150,7 @@ export default function ChatDrawerRight({ isOpen, onToggle, onSendMessage, sessi
                 <button
                   onClick={handleSend}
                   disabled={!inputText.trim()}
-                  className="p-2 bg-blue-600 hover:bg-blue-500 disabled:bg-white/10 disabled:text-white/30 rounded-full text-white transition-colors"
+                  className="p-2 bg-primary hover:bg-primary/80 disabled:bg-secondary/30 disabled:text-foreground/30 rounded-full text-foreground transition-colors"
                 >
                   <Send size={18} />
                 </button>
