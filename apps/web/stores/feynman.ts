@@ -21,6 +21,7 @@ export interface Session {
   topic: string;
   date: number;
   preview: string;
+  personaId: string;
 }
 
 export interface Conversation {
@@ -234,14 +235,15 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
   },
 
   saveSession: () => {
-    const { topic, messages, sessions } = get();
+    const { topic, messages, sessions, currentPersonaId } = get();
     if (messages.length === 0) return;
 
     const newSession: Session = {
       id: Math.random().toString(36).substring(7),
       topic: topic || 'Untitled Session',
       date: Date.now(),
-      preview: messages[messages.length - 1].text.substring(0, 50) + '...'
+      preview: messages[messages.length - 1].text.substring(0, 50) + '...',
+      personaId: currentPersonaId
     };
 
     set({ sessions: [newSession, ...sessions] });
