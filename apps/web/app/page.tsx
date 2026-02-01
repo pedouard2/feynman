@@ -17,6 +17,7 @@ export default function Home() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isNewSessionModalOpen, setIsNewSessionModalOpen] = useState(false);
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(true);
+  const [isContextPanelOpen, setIsContextPanelOpen] = useState(true);
 
   const { agentState, isConnected, isMockMode, setAgentState } = useFeynmanStore();
   const { startSession, stopSession, sendMessage, toggleMic, commitTurn, isMicOn } = useRealtimeSession();
@@ -54,6 +55,14 @@ export default function Home() {
 
       {currentView === 'chat' && (
         <div className="flex h-full">
+          <div className="flex-shrink-0">
+            <SessionContextPanel 
+              sessionId={activeSessionId}
+              isOpen={isContextPanelOpen}
+              onToggle={() => setIsContextPanelOpen(!isContextPanelOpen)}
+            />
+          </div>
+
           <div className="flex-1 relative">
             <Persona />
             <JudgeFeedback />
@@ -116,10 +125,6 @@ export default function Home() {
                 </div>
               </div>
             )}
-          </div>
-
-          <div className="w-[400px] flex-shrink-0">
-            <SessionContextPanel sessionId={activeSessionId} />
           </div>
 
           <div className="flex-shrink-0">
