@@ -74,7 +74,8 @@ interface FeynmanState {
   syncMessageToApi: (role: 'user' | 'assistant', content: string) => Promise<void>;
 }
 
-export const useFeynmanStore = create<FeynmanState>((set, get) => ({
+export const useFeynmanStore = create<FeynmanState>((set, get) => {
+  const store = {
   step: 1,
   topic: '',
   transcript: '',
@@ -267,4 +268,22 @@ export const useFeynmanStore = create<FeynmanState>((set, get) => ({
       currentConversationId: null
     });
   }
-}));
+};
+
+  const initialSessions = store.sessions || [];
+  const migratedSessions = initialSessions.map(session => {
+    if (!session.personaId) {
+      console.log(`Migrating session ${session.id} with default personaId`);
+      return { ...session, personaId: DEFAULT_PERSONA_ID };
+    }
+    return session;
+  });
+
+  if (migratedSessions.length !== initialSessions.length || 
+      migratedSessions.some((s, i) => s.personaId !== initialSessions[i].personaId)) {
+    console.log(`Migrated ${migratedSessions.filter((s, i) => !initialSessions[i].personaId).length} sessions`);
+    store.sessions = migratedSessions;
+  }
+
+  return store;
+});
